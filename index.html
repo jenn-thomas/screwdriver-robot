@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Control Arm</title>
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="jquery.flot.js"></script>
+        <script type="text/javascript" src="jquery.flot.axislabels.js"></script>
+        <script type="text/javascript" src="socket.io.js"></script>
+        <script type="text/javascript" src="vis.js"></script>
+  <style>
+      .container {
+          margin:5px;
+          font-family: sans-serif;
+      }      
+
+      input[type="text"] {
+          margin-left:10px;
+          margin-right:20px;
+          width:30px;
+          text-align:right;
+      }
+
+      .controls{
+          width: 300px;
+          height:500px;
+          float:left;
+          padding:10px;
+          margin:10px;
+          margin-top:57px;
+          border:2px solid gray;
+      }
+      #console{
+          overflow: scroll;
+          border:1px solid gray;
+          width: 285px;
+          height: 250px;
+      }
+      .title{
+          font-size: 16px;
+      }
+      
+      p{
+          font-size: 14px;
+      }
+      
+      #data{
+          width: 150px;
+          margin-right:10px;
+      }
+
+      #run{
+          margin-top: 20px;
+          text-align: center;
+      }
+      .plot-placeholder {
+            width: 300px;
+            height: 300px;
+            font-size: 10px;
+            float: left;
+        }
+      
+      .circle{
+          position:relative;
+          border-radius: 50%;
+          width:10px;
+          height:10px;
+          float:left;
+          margin-right: 10px;
+          top:2.25px;
+      }
+      #boltColor{
+          border: 2px solid red;
+      }
+      #nutColor{
+          border: 2px solid blue;
+      }
+
+
+  </style>
+</head>
+<body>
+    
+<div class="controls">
+    <div class="container">
+        <p>Nut Location (cm):</p>
+        <p><div class="circle" id="nutColor"></div>
+            x:<input type="text" id="xNut" value="-9">y:<input type="text" id="yNut" value="28">
+    z:<input type="text" id="zNut" value="1" readonly></p>
+        <p>Bolt Location (cm):</p>
+        <p><div class="circle" id="boltColor"></div>
+            x:<input type="text" id="xBolt" value="15">y:<input type="text" id="yBolt" value="38">
+        z:<input type="text" id="zBolt" value="15.5"></p>
+    </div>
+    <div class="container">
+        <div class="title">Console</div>
+        <textarea id="console" readonly></textarea>
+        <div class="container">
+            <input type="text" id="data">
+            <input type="button" id="send" onclick="sendData()" value="Submit Data">
+        </div>
+    </div>
+    <div id="run">
+        <input type="button" id="run" onclick="run()" value="Run Arm">
+    </div>
+</div>
+<div class="plots">
+        <div id="plotContainer">
+        <div id="3dPlot"></div>
+    </div>
+    <div id="xy" class="plot-placeholder"></div>
+</div>
+
+</body>
+<script>
+var socket = io.connect('http://localhost:8080');
+var step = 0;
+var xyData = [];
+var nutPoints = [Number($('#xNut').val()), Number($('#yNut').val()),Number($('#zNut').val())];
+var boltPoints = [ Number($('#xBolt').val()), Number($('#yBolt').val()),Number($('#zBolt').val())];
+var xyzData = new vis.DataSet();
+var armRunning = false;
+var plot3D = null;
+var currentData = [];
+var liftPoint = [];
+var options3d = {
+    width:  '300px',
+    height: '300px',
+    style: 'line',
+    xMax: 30,
+    xMin: -30,
+    yMax: 50,
+    yMin: 0,
+    zMax: 40,
+    zMin: 0,
+    showPerspective: false,
+    showGrid: true,
+    keepAspectRatio: true,
+    verticalRatio: 1.0,
+    dataColor: {fill: 'blue', stroke: '#3267D2', strokeWidth: 3},
+    cameraPosition: {horizontal: .7, vertical: .5, distance: 1.7}
+  };
+var container3d = document.getElementById('3dPlot');
+    // excepts Y/N, a point, and a STOP command while putting on bolt
+var commandArray = ['Moving to nut...\r\n','Arm is at nut...\r\n', 'Picking up nut...\r\n',
+                   'Lifting nut...\r\n','Moving to bolt...\r\n', 'Is the arm position ok?\r\n',
+                   'What point should it be at? Change the points by re-entering the values above. Then hit submit data.\r\n', 'Putting nut on bolt...\r\n'];
+var iters = 0;
+var gripperDeg = 0;
+document.getElementById('console').value = 'Hit run arm to move the arm!\r\n';
+    document.getElementById("send").disabled = true;
+
+function sendData(){
+    if (armRunning){
+        switch(step){
+            case 1:
+                document.getElementById("send").disabled = false;
+                    nutPoints[3] = 0;
+                    nutPoints[4] = 0;
+                    socket.emit('data', nutPoints);
+                    step++
+                    document.getElementById('console').value += commandArray[step];
+                    document.getElementById('data').value = "";
+//                if ($('#data').val().toUpperCase() == 'Y'){
+//                    //socket.emit next point
+//                    nutPoints[3] = 0;
+//                    nutPoints[4] = 0;
+//                    socket.emit('data', nutPoints);
+//                    step++
+//                    document.getElementById('console').value += commandArray[step];
+//                    document.getElementById('data').value = "";
+//                }
+//                else if ($('#data').val().toUpperCase() == 'N'){
+//                    document.getElementById('console').value += "That's too bad! Re-enter your values above and hit run arm again\r\n"
+//                    step --;
+//                    document.getElementById('run').disabled = false;
+//                    document.getElementById('data').value = "";
+//                }
+//                else{
+//                    document.getElementById('data').value = "";
+//                    document.getElementById('console').value += "Please enter Y or N.\r\n"
+//                }
+                break;
+            case 3:
+                    liftPoint = [nutPoints[0],nutPoints[1],nutPoints[2] + 20,0,0]; 
+                    socket.emit('data', liftPoint);
+                    document.getElementById('console').value += commandArray[step];
+                break;
+            case 4:
+                    boltPoints.push(0); boltPoints.push(0);
+                    socket.emit('data', boltPoints);
+                    document.getElementById('console').value += commandArray[step];
+                break;
+            case 5:
+                if ($('#data').val().toUpperCase() == 'Y'){
+                    document.getElementById('data').value = "";
+                    step += 2;
+                    boltPoints[3] = gripperDeg;
+                    boltPoints[4] = 0;    
+                    document.getElementById('console').value += commandArray[step];
+                    var timer = setInterval(function() {
+                        boltPoints[2] = boltPoints[2] - .25;
+                        boltPoints[3] -= 100;
+                        boltPoints[4] = 0;
+                        socket.emit('data', boltPoints);
+                        if (boltPoints[2] < 10 || boltPoints[3] == -1000){
+                            clearInterval(timer);
+                            document.getElementById('console').value += "Done.\r\n"
+                            armRunning = false;
+                            step = 0;
+                        }
+                    }, 2000)
+                }
+                else if ($('#data').val().toUpperCase() == 'N'){
+                    document.getElementById('data').value = "";
+                    document.getElementById('console').value += commandArray[6];
+                    step --;
+                }
+                else{
+                    document.getElementById('data').value = "";
+                    document.getElementById('console').value += "Please enter Y or N.\r\n"
+                }
+                break;
+            default:
+                break;
+        }
+    }
+}
+    
+function run() {
+    armRunning = true;
+    document.getElementById('run').disabled = true;
+    document.getElementById('console').value += commandArray[step];
+    nutPoints.push(0); nutPoints.push(1);
+    socket.emit('data', nutPoints);
+}    
+    
+// recieve the current drawing point and plot
+socket.on('sendPts', function (data){
+    if (iters == 0){
+        iters++;
+    } 
+    else{
+        if (armRunning){
+            step++;
+            if (step != 4 && step != 3 && step <= 5){
+                document.getElementById('console').value += commandArray[step];
+            }
+            sendData();
+            if (step >= 4){
+                nutPoints = [data[1][0][4],data[1][1][4],data[1][2][4]]
+            }
+        }
+    }
+    currentData = data;
+    drawPlots(data[1]);
+ });
+    
+$( "input[type='text']" )
+  .focusout(function() {
+    if (armRunning){
+        boltPoints = [Number($('#xBolt').val()), Number($('#yBolt').val()), Number($('#zBolt').val())];
+    }
+    else{
+        nutPoints = [Number($('#xNut').val()), Number($('#yNut').val()), Number($('#zNut').val())];
+        boltPoints = [Number($('#xBolt').val()), Number($('#yBolt').val()), Number($('#zBolt').val())];
+    }
+    drawPlots(currentData[1])
+  })
+
+// draw the two plots
+function drawPlots(points){
+    xyData = []; xyzData.clear();
+    for (var i =0; i< points[0].length;i++){
+        xyData.push([points[0][i],points[1][i]]);
+        xyzData.add({x:points[0][i],y:points[1][i],z:points[2][i]});
+    }
+        plot3D = new vis.Graph3d(container3d, xyzData, options3d);
+    
+        $.plot("#xy", [{data:xyData, color: "#0066ff"}, 
+           {data:[nutPoints], color: "blue"},
+           {data:[boltPoints], color: "red"}],
+            {series: {
+               lines: {show: true},
+               points: {show: true},
+           },
+            axisLabels: {show: true},
+            xaxes: [{axisLabel: 'x'}],
+            yaxes: [{axisLabel: 'y'}],
+            xaxis:{
+                ticks: 10,
+                min: -30,
+                max: 30,
+                tickLength: 0
+            },
+            yaxis: {
+                ticks: 10,
+                min: 0,
+                max: 45,
+                tickLength: 0
+            },
+            grid: {
+                backgroundColor: {
+                    colors: ["#fff", "#fff"]
+                },
+                borderWidth: {
+                    top: 1,
+                    right: 1,
+                    bottom: 1,
+                    left: 1
+                }
+            }
+           });
+}
+    
+
+
+
+  </script>
+</html>

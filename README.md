@@ -1,2 +1,4 @@
-# screwdriver-robot
-Code to control a robotic arm to pick up a nut and screw it onto a bolt"
+# Screwdriver Robot
+Code to control a robotic arm from an online interface to pick up a nut and screw it onto a bolt
+
+
